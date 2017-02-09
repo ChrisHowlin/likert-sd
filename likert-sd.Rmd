@@ -1,0 +1,91 @@
+---
+title: "Plotting semantic differential data using 'likert' package"
+output: html_notebook
+---
+
+This notebook looks at how likert plots are generated with the 'likert' R package and how they can be enhanced to display data about semantic differentials.
+
+Likert type questions are frequently used in surveys or questionnaires along the lines of 'How much do you agree with this statement?', with answer options such as 'Disagree', 'Neither Agree nor Disagree', or 'Agree', or a numerical scale.
+
+Semantic differentials are two concepts which are opposite in meaning and the respondant has to give a level of association each one.
+
+The 'likert' package works over ggplot2 and does a great job of display this data using divergent stacked bar charts, density plots, and heat maps and provides various features for grouping the data. It works very well for traditional plots, but I want to see if the layout can work better for semantic differential-type data.
+
+```{r}
+library(ggplot2)
+library(likert)
+```
+
+In the **feedback_questionnaire_results.csv** file we have a 27 respondents for 6 questions, this is what will be used for the likert plot. Each answer is on a scale 1-5, where 1 is the maximum association with the left scale value and 5 is the maximum association with the right scale value.
+
+```{r}
+feedback_responses.df <- read.csv('feedback_questionnaire_results.csv', na.strings = '', stringsAsFactors = FALSE)
+summary(feedback_responses.df)
+```
+
+**sd-scales.csv** provides the left and right labels for each item in the questionnaire. In this case a value of 1 for Q1 means that the respondent is nervous, whereas 5 means they are confident.
+```{r}
+# The semantic differential labels for each question
+sd_labels.df <- read.csv('sd-scales.csv', na.strings = '', stringsAsFactors = FALSE)
+sd_labels.df
+```
+
+With this data we can use the likert() function to turn the data frame into the form used by the specialised likert.plot function
+```{r}
+# The respondent id is the first column in the df, which is not part of the likert plot
+feedback_responses.likert = likert(feedback_responses.df[,2:7], nlevels = 5)
+```
+
+This is the standard form of the likert bar plot used by the package. Normally you would have more meaningful question titles along the left scale, but in this case, the question is in the title and we want the semantic labels to be on the scale.
+```{r}
+# This is the standard form of the likert plot
+plot(feedback_responses.likert) +
+  ggtitle(label = 'When I receive my marked written task from my teacher I feel...')
+```
+
+One way to add the semantic labels is to concatenate them and replace the scale as such:
+
+```{r}
+# Join the labels together and replace the question names
+create_semantic_labels <- function(labels)
+{
+  return(paste(labels[2], labels[3], sep = "/"))
+}
+new_names <- apply(sd_labels.df, 1, create_semantic_labels)
+colnames(feedback_responses.df)[2:7] <- new_names
+
+# Plot using the new question names
+feedback_responses.likert = likert(feedback_responses.df[,2:7], nlevels = 5)
+plot(feedback_responses.likert) +
+  ggtitle(label = 'When I receive my marked written task from my teacher I feel...')
+```
+
+This is not bad but the effect I am looking for is to have the left label on the left side of the plot and the right label on the right side. This is not supported by the likert package, and given that using a second scale is not supported on ggplot, there options are limited.
+
+This is one approach, by removing the scales and adding geom_text elements inside the plot panel. This kind of achieves the effect but there are some clear problems:
+
+1. The geom_text elements are clipped by the boundary of the panel. If the plot size is increased, then the text fits on as the font size does not increase with proportionately to the panel.
+2. There is no scale, so when this plot is used inline with others the alignment of the title doesn't match up
+```{r}
+plot(feedback_responses.likert) +
+  ggtitle(label = 'When I receive my marked written task from my teacher I feel...',
+          subtitle = "") +
+  geom_text(data=feedback_responses.likert$results, y=-100, aes(x=Item,
+                                                                label=sd_labels.df$l_scale),
+            vjust=-1, hjust=1) +
+  geom_text(data=feedback_responses.likert$results, y=100, aes(x=Item,
+                                                               label=sd_labels.df$r_scale),
+            vjust=-1, hjust=0) +
+  theme(panel.background = element_blank(),
+        axis.text = element_blank(),
+        legend.position = 'none') +
+  ylab('Neutral')
+```
+
+It has been suggested to use a dummy facet to create a facet label on the right hand side, which could then be matched to the left hand scale formatting. This is definitely hacking around the ggplot design but would achieve the aims of having the semantic labelling of either side of the bars and conforming to the wider design aesthetic of the 'likert' package, starting with something like this...
+```{r}
+plot(feedback_responses.likert) +
+  ggtitle(label = 'When I receive my marked written task from my teacher I feel...') +
+  facet_grid(Item ~ .)
+```
+
